@@ -85,6 +85,16 @@ To add AI feedback:
 python reviewer.py path/to/your/project/ --ai
 ```
 
+You can also customise the thresholds used by the checks:
+
+```bash
+python reviewer.py path/to/your/project/ \
+  --max-function-lines 50 \
+  --max-function-args 8 \
+  --complexity-threshold 15 \
+  --flake8-max-line-length 100
+```
+
 ## Example Output
 
 **text**
@@ -169,21 +179,22 @@ The tool runs a series of checks in sequence:
 5. **Duplicate detection** – extracts and normalises function bodies, hashes them, and reports any exact duplicates (ignoring comments and whitespace).
 6. **radon raw** – displays lines of code, comments, and blank lines per file (informational only).
 
-All results are aggregated and printed with colour‑coded severity.
+All results are aggregated and printed with colour‑coded severity. The reviewer also skips common virtualenv folders such as .venv and any paths listed in .gitignore.
 
 ---
 
 ## Configuration
 
-You can adjust thresholds directly in the script:
+You can adjust thresholds directly from the command line or by editing the defaults in the config object:
 
-| Check                   | Variable / Threshold                | Location                |
-| ----------------------- | ----------------------------------- | ----------------------- |
-| Flake8 line length      | `--max-line-length=120`           | `run_flake8()`        |
-| Max function lines      | `30`                              | `visit_FunctionDef()` |
-| Max arguments           | `5`                               | `visit_FunctionDef()` |
-| Complexity warning      | `> 10`                            | `run_radon_cc()`      |
-| Maintainability warning | `< 40` (low), `< 20` (very low) | `run_radon_mi()`      |
+| Check | CLI option | Default |
+| --- | --- | --- |
+| Max function lines | `--max-function-lines` | `30` |
+| Max function args | `--max-function-args` | `5` |
+| Complexity warning | `--complexity-threshold` | `10` |
+| Maintainability warning (low) | `--maintainability-low-threshold` | `40.0` |
+| Maintainability warning (very low) | `--maintainability-very-low-threshold` | `20.0` |
+| Flake8 line length | `--flake8-max-line-length` | `120` |
 
 Feel free to tweak these values to match your team's standards.
 

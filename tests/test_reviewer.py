@@ -2,10 +2,20 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from external_tools import collect_python_files
+import reviewer
+from external_tools import ReviewConfig, collect_python_files
 
 
 class CollectPythonFilesTests(unittest.TestCase):
+    def test_defaults_are_used_when_no_config_is_provided(self):
+        config = reviewer.ReviewConfig()
+        self.assertEqual(config.max_function_lines, 30)
+        self.assertEqual(config.max_function_args, 5)
+        self.assertEqual(config.complexity_threshold, 10)
+        self.assertEqual(config.maintainability_low_threshold, 40.0)
+        self.assertEqual(config.maintainability_very_low_threshold, 20.0)
+        self.assertEqual(config.flake8_max_line_length, 120)
+
     def test_skips_venv_directory(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

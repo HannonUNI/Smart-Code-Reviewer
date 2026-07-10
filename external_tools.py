@@ -1,6 +1,17 @@
 import subprocess
 from pathlib import Path
 from fnmatch import fnmatchcase
+from dataclasses import dataclass
+
+
+@dataclass
+class ReviewConfig:
+    max_function_lines: int = 30
+    max_function_args: int = 5
+    complexity_threshold: int = 10
+    maintainability_low_threshold: float = 40.0
+    maintainability_very_low_threshold: float = 20.0
+    flake8_max_line_length: int = 120
 
 
 def _load_ignored_patterns(target_path):
@@ -64,15 +75,16 @@ def collect_python_files(target_path):
     return []
 
 
-def run_flake8(target):
+def run_flake8(target, config=None):
     """Run flake8 and return list of issues."""
     files = collect_python_files(target)
     if not files:
         return []
 
+    config = config or ReviewConfig()
     try:
         result = subprocess.run(
-            ['flake8', *[str(path) for path in files], '--max-line-length=120', '--extend-ignore=E203,W503'],
+            ['flake8', *[str(path) for path in files], f'--max-line-length={config.flake8_max_line_length}', '--extend-ignore=E203,W503'],
             capture_output=True, text=True
         )
     except FileNotFoundError:
@@ -94,12 +106,13 @@ def run_flake8(target):
             issues.append((line, None, None, 'STYLE'))
     return issues
 
-def run_radon_cc(target):
+def run_radon_cc(target, config=None):
     """Run radon cc (cyclomatic complexity) and return issues."""
     files = collect_python_files(target)
     if not files:
         return []
 
+    config = config or ReviewConfig()
     try:
         result = subprocess.run(
             ['radon', 'cc', *[str(path) for path in files], '-a', '-s'],
@@ -120,19 +133,20 @@ def run_radon_cc(target):
                     complex_str = rest.split('(')[-1].rstrip(')')
                     if complex_str.isdigit():
                         comp = int(complex_str)
-                        if comp > 10:
+                        if comp > config.complexity_threshold:
                             issues.append(
                                 (f"{location} - function '{func_name}' has high complexity ({comp})",
                                  None, None, 'COMPLEXITY')
                             )
     return issues
 
-def run_radon_mi(target):
+def run_radon_mi(target, config=None):
     """Run radon mi (maintainability index) and return issues."""
     files = collect_python_files(target)
     if not files:
         return []
 
+    config = config or ReviewConfig()
     try:
         result = subprocess.run(
             ['radon', 'mi', *[str(path) for path in files], '-s'],
@@ -153,12 +167,12 @@ def run_radon_mi(target):
                     score_str = rest.split('(')[-1].rstrip(')')
                     try:
                         score = float(score_str)
-                        if score < 20:
+                        if score < config.maintainability_very_low_threshold:
                             issues.append(
                                 (f"{file_name} - maintainability index {score:.1f} (grade {grade}) - very low",
                                  None, None, 'MAINTAINABILITY')
                             )
-                        elif score < 40:
+                        elif score < config.maintainability_low_threshold:
                             issues.append(
                                 (f"{file_name} - maintainability index {score:.1f} (grade {grade}) - low",
                                  None, None, 'MAINTAINABILITY')

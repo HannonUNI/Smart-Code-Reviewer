@@ -11,8 +11,8 @@ from pathlib import Path
 from collections import defaultdict
 import hashlib
 import re
-from external_tools import collect_python_files, run_flake8, run_radon_cc, run_radon_mi, run_radon_raw
 import argparse
+from external_tools import ReviewConfig, collect_python_files, run_flake8, run_radon_cc, run_radon_mi, run_radon_raw
 
 try:
     from ai_reviewer import run_ai_review
@@ -82,21 +82,22 @@ def find_duplicate_functions(target_path):
 
 # ---------- Custom AST checks ----------
 class ReadabilityVisitor(ast.NodeVisitor):
-    def __init__(self, filename):
+    def __init__(self, filename, config):
         self.filename = filename
+        self.config = config
         self.issues = []
 
     def visit_FunctionDef(self, node):
         line_count = node.end_lineno - node.lineno + 1
-        if line_count > 30:
+        if line_count > self.config.max_function_lines:
             self.issues.append(
-                (f"{self.filename}:{node.lineno} - function '{node.name}' is {line_count} lines long (max 30)",
+                (f"{self.filename}:{node.lineno} - function '{node.name}' is {line_count} lines long (max {self.config.max_function_lines})",
                  node.lineno, None, 'READABILITY')
             )
         num_args = len(node.args.args)
-        if num_args > 5:
+        if num_args > self.config.max_function_args:
             self.issues.append(
-                (f"{self.filename}:{node.lineno} - function '{node.name}' has {num_args} arguments (max 5)",
+                (f"{self.filename}:{node.lineno} - function '{node.name}' has {num_args} arguments (max {self.config.max_function_args})",
                  node.lineno, None, 'READABILITY')
             )
         if not ast.get_docstring(node):
@@ -114,7 +115,8 @@ class ReadabilityVisitor(ast.NodeVisitor):
             )
         self.generic_visit(node)
 
-def custom_checks(target_path):
+def custom_checks(target_path, config=None):
+    config = config or ReviewConfig()
     all_issues = []
     target = Path(target_path)
     files = collect_python_files(target)
@@ -126,7 +128,7 @@ def custom_checks(target_path):
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 tree = ast.parse(f.read(), filename=str(file_path))
-            visitor = ReadabilityVisitor(str(file_path))
+            visitor = ReadabilityVisitor(str(file_path), config)
             visitor.visit(tree)
             all_issues.extend(visitor.issues)
         except SyntaxError as e:
@@ -193,7 +195,22 @@ def main():
     parser.add_argument("target", help="Path to a Python file or directory")
     parser.add_argument("--ai", action="store_true", help="Enable AI-powered review (requires OpenAI API key and prompt file)")
     parser.add_argument("--prompt", default="ai_prompt.txt", help="Prompt file for AI review (default: ai_prompt.txt)")
+    parser.add_argument("--max-function-lines", type=int, default=30, help="Maximum allowed lines in a function")
+    parser.add_argument("--max-function-args", type=int, default=5, help="Maximum allowed arguments in a function")
+    parser.add_argument("--complexity-threshold", type=int, default=10, help="Cyclomatic complexity threshold for warnings")
+    parser.add_argument("--maintainability-low-threshold", type=float, default=40.0, help="Maintainability index threshold for low warnings")
+    parser.add_argument("--maintainability-very-low-threshold", type=float, default=20.0, help="Maintainability index threshold for very-low warnings")
+    parser.add_argument("--flake8-max-line-length", type=int, default=120, help="Maximum line length passed to flake8")
     args = parser.parse_args()
+
+    config = ReviewConfig(
+        max_function_lines=args.max_function_lines,
+        max_function_args=args.max_function_args,
+        complexity_threshold=args.complexity_threshold,
+        maintainability_low_threshold=args.maintainability_low_threshold,
+        maintainability_very_low_threshold=args.maintainability_very_low_threshold,
+        flake8_max_line_length=args.flake8_max_line_length,
+    )
 
     target = args.target
     if not os.path.exists(target):
@@ -204,19 +221,19 @@ def main():
     all_issues = []
 
     print("   Running flake8...")
-    flake_issues = run_flake8(target)
+    flake_issues = run_flake8(target, config)
     all_issues.extend(flake_issues)
 
     print("   Running radon cc...")
-    cc_issues = run_radon_cc(target)
+    cc_issues = run_radon_cc(target, config)
     all_issues.extend(cc_issues)
 
     print("   Running radon mi...")
-    mi_issues = run_radon_mi(target)
+    mi_issues = run_radon_mi(target, config)
     all_issues.extend(mi_issues)
 
     print("   Running custom readability checks...")
-    custom_issues = custom_checks(target)
+    custom_issues = custom_checks(target, config)
     all_issues.extend(custom_issues)
 
     print("   Running duplicate function detection...")
