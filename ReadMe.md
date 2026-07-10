@@ -1,8 +1,18 @@
 # Smart Code Reviewer
 
-A lightweight AI‑assistant that reviews Python code for **readability**, **structure**, and **maintainability** *before* a human review.It runs locally, combines battle‑tested linters (flake8, radon) with custom AST checks, and produces a colourised report.
+A lightweight local review helper for Python code that checks **readability**, **structure**, and **maintainability** before a human review. It runs locally, combines flake8 and radon with custom AST checks, and produces a coloured terminal report.
 
 > **Note:** This tool is designed for **local development** – not for deployment. It’s meant to be run on your machine as a quick pre‑review step.
+
+## Project Structure
+
+The reviewer is split into three modules:
+
+- **`reviewer.py`** – main CLI script that runs the static checks, aggregates findings, and prints the report.
+- **`external_tools.py`** – thin wrappers around flake8 and radon so the main script can collect issues in a consistent format.
+- **`ai_reviewer.py`** – optional module that handles AI‑powered review using the OpenAI API. It is only used when the `--ai` flag is supplied.
+
+This separation keeps the core logic clean and makes it easier to swap out or extend each part later.
 
 ---
 
@@ -18,11 +28,29 @@ A lightweight AI‑assistant that reviews Python code for **readability**, **str
 
 ---
 
+
+## AI‑Powered Review (Optional)
+
+To enable the AI review:
+
+1. Install the optional OpenAI library: `pip install openai`
+2. Set your `OPENAI_API_KEY` environment variable.
+3. Create a prompt file (default: `ai_prompt.txt`) with your instructions.
+4. Run the reviewer with the `--ai` flag (and optionally `--prompt` to choose a different prompt file):
+   ```bash
+   python reviewer.py my_project/ --ai --prompt ai_prompt.txt
+   ```
+
+---
+
+
+
 ## Requirements
 
 - Python 3.6+
 - [flake8](https://flake8.pycqa.org/)
 - [radon](https://radon.readthedocs.io/)
+- [openai](https://pypi.org/project/openai/) (optional, only for AI review)
 
 ---
 
@@ -35,19 +63,27 @@ A lightweight AI‑assistant that reviews Python code for **readability**, **str
 pip install flake8 radon
 ```
 
+For AI review, install the optional dependency as well:
+
+```bash
+pip install openai
+```
 
 ## Usage
 
 Run the reviewer on a single Python file or an entire directory:
 
-**bash**
-
-```
+```bash
 python reviewer.py path/to/your/file.py
 # or
 python reviewer.py path/to/your/project/
 ```
 
+To add AI feedback:
+
+```bash
+python reviewer.py path/to/your/project/ --ai
+```
 
 ## Example Output
 
@@ -84,8 +120,40 @@ python reviewer.py path/to/your/project/
    - Prioritise complexity, maintainability, and duplicate warnings.
    - Consider adding docstrings and refactoring long functions.
    - Run the tool again after fixing to verify improvements.
-```
 
+---
+
+🤖 AI Review Feedback:
+======================================================================
+
+**Strengths:**
+- The code is straightforward and easy to follow for basic arithmetic operations.
+- Function names are clear and self‑documenting (`add`, `subtract`, etc.).
+
+**Areas for improvement:**
+
+1. **Error Handling**  
+   - The `divide` function prints a message and returns `None` when dividing by zero. This is fragile – the caller might not expect `None` and could cause a `TypeError` later.  
+   - **Recommendation:** Raise a custom exception (e.g., `ZeroDivisionError`) to make the failure explicit and let the caller decide how to handle it.
+
+2. **Code Duplication / Extensibility**  
+   - The `calculate` function uses a chain of `if/elif` statements. Adding a new operation would require modifying this function, which violates the Open/Closed principle.  
+   - **Recommendation:** Use a dictionary mapping operation names to functions, or implement a simple strategy pattern. This would make the code more maintainable.
+
+3. **Global Execution**  
+   - The example usage at the bottom runs immediately when the module is imported. This is not good practice for a reusable module.  
+   - **Recommendation:** Wrap the demo code inside a `if __name__ == "__main__":` guard.
+
+4. **Type Hints**  
+   - The code lacks type annotations, which would improve readability and enable static type checking.  
+   - **Recommendation:** Add type hints for all function arguments and return values (e.g., `def add(a: int, b: int) -> int:`).
+
+5. **Logging vs. Printing**  
+   - Using `print` for error messages is fine for a toy script, but in a larger application, consider using Python’s `logging` module for better control over output.
+
+**Overall:**  
+The code is functional and clear, but it would benefit from better error handling, a more extensible architecture, and protective execution guards. With these tweaks, it would be production‑ready.
+```
 
 ## How It Works
 

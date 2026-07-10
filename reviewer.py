@@ -11,7 +11,15 @@ from pathlib import Path
 from collections import defaultdict
 import hashlib
 import re
-from external_tools import run_flake8, run_radon_cc, run_radon_mi, run_radon_raw
+from external_tools import collect_python_files, run_flake8, run_radon_cc, run_radon_mi, run_radon_raw
+import argparse
+
+try:
+    from ai_reviewer import run_ai_review
+except ImportError:
+    # Fallback if ai_reviewer.py is missing
+    def run_ai_review(target_path, prompt_file="ai_prompt.txt"):
+        return "ai_reviewer.py not found. AI review disabled."
 
 # ---------- Duplicate detection ----------
 def get_function_body(filename, node):
@@ -38,11 +46,8 @@ def get_function_body(filename, node):
 def find_duplicate_functions(target_path):
     """Find functions with identical bodies across all Python files."""
     target = Path(target_path)
-    if target.is_file() and target.suffix == '.py':
-        files = [target]
-    elif target.is_dir():
-        files = list(target.rglob('*.py'))
-    else:
+    files = collect_python_files(target)
+    if not files and target.exists():
         return []
 
     all_funcs = {}
@@ -112,11 +117,8 @@ class ReadabilityVisitor(ast.NodeVisitor):
 def custom_checks(target_path):
     all_issues = []
     target = Path(target_path)
-    if target.is_file() and target.suffix == '.py':
-        files = [target]
-    elif target.is_dir():
-        files = list(target.rglob('*.py'))
-    else:
+    files = collect_python_files(target)
+    if not files:
         print(f"Error: {target_path} is not a Python file or directory.")
         return []
 
@@ -134,9 +136,9 @@ def custom_checks(target_path):
     return all_issues
 
 # ---------- Report generation ----------
-def print_report(all_issues, raw_metrics=None):
-    """Print a coloured, grouped report with optional raw metrics."""
-    if not all_issues and not raw_metrics:
+def print_report(all_issues, raw_metrics=None, ai_response=None):
+    """Print a coloured, grouped report with optional raw metrics and AI feedback."""
+    if not all_issues and not raw_metrics and not ai_response:
         print("✅ No issues found! Code looks clean.")
         return
 
@@ -180,13 +182,20 @@ def print_report(all_issues, raw_metrics=None):
     print("   - Consider adding docstrings and refactoring long functions.")
     print("   - Run the tool again after fixing to verify improvements.")
 
+    if ai_response:
+        print("\n🤖 AI Review Feedback:")
+        print("=" * 70)
+        print(ai_response)
+
 # ---------- Main ----------
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python reviewer.py <path-to-python-file-or-directory>")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description="Smart Code Reviewer")
+    parser.add_argument("target", help="Path to a Python file or directory")
+    parser.add_argument("--ai", action="store_true", help="Enable AI-powered review (requires OpenAI API key and prompt file)")
+    parser.add_argument("--prompt", default="ai_prompt.txt", help="Prompt file for AI review (default: ai_prompt.txt)")
+    args = parser.parse_args()
 
-    target = sys.argv[1]
+    target = args.target
     if not os.path.exists(target):
         print(f"Error: '{target}' does not exist.")
         sys.exit(1)
@@ -217,8 +226,13 @@ def main():
     print("   Gathering raw metrics (radon raw)...")
     raw_metrics = run_radon_raw(target)
 
+    ai_response = None
+    if args.ai:
+        print("   Running AI review (this may take a moment)...")
+        ai_response = run_ai_review(target, args.prompt)
+
     print("   Review complete.")
-    print_report(all_issues, raw_metrics)
+    print_report(all_issues, raw_metrics, ai_response)
 
 if __name__ == "__main__":
     main()

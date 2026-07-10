@@ -1,10 +1,78 @@
 import subprocess
+from pathlib import Path
+from fnmatch import fnmatchcase
+
+
+def _load_ignored_patterns(target_path):
+    """Load ignore patterns from .gitignore files above the target path."""
+    target = Path(target_path)
+    if target.is_file():
+        base = target.parent
+    elif target.is_dir():
+        base = target
+    else:
+        base = Path(target_path).parent if hasattr(target_path, 'parent') else Path('.')
+
+    root = base.resolve()
+    patterns = {'.venv', 'venv'}
+    current = root
+    while True:
+        gitignore = current / '.gitignore'
+        if gitignore.exists():
+            with open(gitignore, 'r', encoding='utf-8') as handle:
+                for raw_line in handle:
+                    line = raw_line.strip()
+                    if not line or line.startswith('#') or line.startswith('!'):
+                        continue
+                    patterns.add(line.rstrip('/'))
+        if current == current.parent:
+            break
+        current = current.parent
+    return patterns, root
+
+
+def _is_ignored(path, root, patterns):
+    """Return True when a path matches any ignore pattern or common virtualenv folder."""
+    rel_path = path.resolve().relative_to(root).as_posix()
+    parts = Path(rel_path).parts
+    for pattern in patterns:
+        normalized = pattern.lstrip('/')
+        if not normalized:
+            continue
+        if '/' in normalized:
+            if fnmatchcase(rel_path, normalized) or fnmatchcase(rel_path, f'**/{normalized}'):
+                return True
+        else:
+            if any(fnmatchcase(part, normalized) for part in parts):
+                return True
+            if normalized in parts:
+                return True
+    return False
+
+
+def collect_python_files(target_path):
+    """Return Python files under the target, skipping ignored paths and virtualenv folders."""
+    target = Path(target_path)
+    patterns, root = _load_ignored_patterns(target)
+    if target.is_file() and target.suffix == '.py':
+        return [target] if not _is_ignored(target, root, patterns) else []
+    if target.is_dir():
+        return [
+            path for path in target.rglob('*.py')
+            if not _is_ignored(path, root, patterns)
+        ]
+    return []
+
 
 def run_flake8(target):
     """Run flake8 and return list of issues."""
+    files = collect_python_files(target)
+    if not files:
+        return []
+
     try:
         result = subprocess.run(
-            ['flake8', target, '--max-line-length=120', '--extend-ignore=E203,W503'],
+            ['flake8', *[str(path) for path in files], '--max-line-length=120', '--extend-ignore=E203,W503'],
             capture_output=True, text=True
         )
     except FileNotFoundError:
@@ -28,9 +96,13 @@ def run_flake8(target):
 
 def run_radon_cc(target):
     """Run radon cc (cyclomatic complexity) and return issues."""
+    files = collect_python_files(target)
+    if not files:
+        return []
+
     try:
         result = subprocess.run(
-            ['radon', 'cc', target, '-a', '-s'],
+            ['radon', 'cc', *[str(path) for path in files], '-a', '-s'],
             capture_output=True, text=True
         )
     except FileNotFoundError:
@@ -57,9 +129,13 @@ def run_radon_cc(target):
 
 def run_radon_mi(target):
     """Run radon mi (maintainability index) and return issues."""
+    files = collect_python_files(target)
+    if not files:
+        return []
+
     try:
         result = subprocess.run(
-            ['radon', 'mi', target, '-s'],
+            ['radon', 'mi', *[str(path) for path in files], '-s'],
             capture_output=True, text=True
         )
     except FileNotFoundError:
@@ -93,9 +169,13 @@ def run_radon_mi(target):
 
 def run_radon_raw(target):
     """Run radon raw and return a dictionary of metrics per file."""
+    files = collect_python_files(target)
+    if not files:
+        return {}
+
     try:
         result = subprocess.run(
-            ['radon', 'raw', target, '-s'],
+            ['radon', 'raw', *[str(path) for path in files], '-s'],
             capture_output=True, text=True
         )
     except FileNotFoundError:
